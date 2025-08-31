@@ -200,22 +200,21 @@
     finally{ setLoading(false); }
   }
 
+  // NEW: client-side partial search (case-insensitive)
   async function search(q){
+    const term = (q||'').trim().toLowerCase();
+    if (!term){ return loadAll(); }
     setLoading(true);
     try{
-      const url = new URL(API_BASE + '/search');
-      url.searchParams.set(COLS.NAME, q);
-      url.searchParams.set(COLS.CASE, q);
-      // Match on either NAME or CASE No (OR). SheetDB supports array params via "or" param
-      // Using multiple keys performs AND by default, so we'll fetch separately and merge unique.
-      const [byName, byCase] = await Promise.all([
-        sheetdb('GET', url.origin + url.pathname + '?' + COLS.NAME + '=' + encodeURIComponent(q)),
-        sheetdb('GET', url.origin + url.pathname + '?' + encodeURIComponent(COLS.CASE) + '=' + encodeURIComponent(q)),
-      ]);
-      // merge unique by CASE No
-      const map = new Map();
-      for (const r of [...byName, ...byCase]){ map.set(r[COLS.CASE] + '|' + r[COLS.NAME], r); }
-      renderRows([...map.values()]);
+      const all = await sheetdb('GET', API_BASE);
+      const tokens = term.split(/\s+/).filter(Boolean);
+      const filtered = all.filter(r => {
+        const name = String(r[COLS.NAME]||'').toLowerCase();
+        const caseno = String(r[COLS.CASE]||'').toLowerCase();
+        const location = String(r[COLS.LOCATION]||'').toLowerCase();
+        return tokens.every(t => name.includes(t) || caseno.includes(t) || location.includes(t));
+      });
+      renderRows(filtered);
     }catch(e){ console.error(e); msg(formMsg, 'Search failed: '+e.message, 'err'); }
     finally{ setLoading(false); }
   }
@@ -291,8 +290,10 @@
   updateBtn.addEventListener('click', updateRow);
   resetBtn.addEventListener('click', resetForm);
   refreshBtn.addEventListener('click', loadAll);
-  searchBtn.addEventListener('click', (e)=>{ e.preventDefault(); const q = searchInput.value.trim(); if (q) search(q); });
+  searchBtn.addEventListener('click', (e)=>{ e.preventDefault(); const q = searchInput.value.trim(); search(q); });
   clearSearchBtn.addEventListener('click', ()=>{ searchInput.value=''; loadAll(); });
+  // Trigger search on Enter key
+  searchInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); search(searchInput.value.trim()); } });
 
   // Initial fetch
   loadAll();
