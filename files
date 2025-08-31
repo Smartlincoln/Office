@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SheetDB CRUD – NAME / CASE No / LOCATION</title>
+  <style>
+    :root { --bg:#0f172a; --panel:#111827; --muted:#94a3b8; --text:#e5e7eb; --accent:#22c55e; --danger:#ef4444; --warn:#f59e0b; }
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(180deg,#0b1220,#0f172a);color:var(--text);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif}
+    header{padding:28px 18px 10px;max-width:1100px;margin:auto}
+    h1{margin:0 0 6px;font-size:22px}
+    .sub{color:var(--muted);font-size:13px}
+
+    main{max-width:1100px;margin:18px auto;padding:0 18px 40px;display:grid;grid-template-columns:380px 1fr;gap:22px}
+    @media (max-width: 900px){ main{grid-template-columns:1fr} }
+
+    .card{background:rgba(17,24,39,.7);box-shadow:0 10px 30px rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.06);border-radius:14px;}
+    .panel{padding:16px 16px 14px}
+    .panel h2{margin:0 0 10px;font-size:16px}
+
+    label{display:block;font-size:13px;margin:10px 0 6px;color:var(--muted)}
+    input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:#0b1220;color:var(--text)}
+    input:focus{outline:2px solid rgba(34,197,94,.35);border-color:transparent}
+
+    .row{display:flex;gap:10px;align-items:center}
+    .row > *{flex:1}
+
+    .btns{display:flex;gap:10px;margin-top:14px}
+    button{cursor:pointer;border:0;border-radius:10px;padding:10px 14px;font-weight:600;color:#0b1220}
+    .primary{background:var(--accent)}
+    .muted{background:#cbd5e1}
+    .warn{background:var(--warn)}
+    .danger{background:var(--danger);color:white}
+    .ghost{background:transparent;color:var(--text);border:1px dashed rgba(255,255,255,.2)}
+
+    .toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid rgba(255,255,255,.06)}
+    .toolbar .left{display:flex;gap:10px}
+
+    table{width:100%;border-collapse:separate;border-spacing:0 8px;padding:8px}
+    thead th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:0 10px}
+    tbody tr{background:#0b1220;border:1px solid rgba(255,255,255,.06)}
+    tbody td{padding:12px 10px}
+    tbody tr:hover{outline:2px solid rgba(34,197,94,.18)}
+    .actions{display:flex;gap:8px}
+
+    .msg{margin:10px 0 0;padding:10px 12px;border-radius:10px;display:none}
+    .msg.show{display:block}
+    .msg.ok{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.4)}
+    .msg.err{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4)}
+    .msg.warn{background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.45)}
+
+    .spinner{width:18px;height:18px;border-radius:50%;border:3px solid rgba(255,255,255,.2);border-top-color:#fff;animation:spin 1s linear infinite;display:inline-block;vertical-align:middle;margin-left:8px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    footer{max-width:1100px;margin:0 auto 30px;color:var(--muted);font-size:12px;padding:0 18px}
+    code{background:#0b1220;border:1px solid rgba(255,255,255,.08);padding:2px 6px;border-radius:6px}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SheetDB CRUD</h1>
+    <div class="sub">Works with columns: <code>NAME</code>, <code>CASE No</code>, <code>LOCATION</code>. Uses <strong>CASE No</strong> as the unique key for edits/deletes.</div>
+  </header>
+
+  <main>
+    <section class="card">
+      <div class="panel">
+        <h2>Add / Edit</h2>
+        <form id="entryForm">
+          <input type="hidden" id="originalCaseNo" />
+          <label for="name">NAME</label>
+          <input id="name" placeholder="Full name" autocomplete="off" required />
+
+          <label for="caseNo">CASE No</label>
+          <input id="caseNo" placeholder="e.g. CA-2025-001" autocomplete="off" required />
+
+          <label for="location">LOCATION</label>
+          <input id="location" placeholder="City / Office" autocomplete="off" required />
+
+          <div class="btns">
+            <button type="submit" class="primary" id="saveBtn">Add Row</button>
+            <button type="button" class="warn" id="updateBtn" disabled>Update Row</button>
+            <button type="button" class="muted" id="resetBtn">Reset</button>
+          </div>
+          <div class="msg" id="formMsg"></div>
+        </form>
+      </div>
+      <div class="toolbar">
+        <div class="left">
+          <input id="searchInput" placeholder="Search by NAME or CASE No..." />
+          <button id="searchBtn" class="ghost">Search</button>
+          <button id="clearSearchBtn" class="ghost">Clear</button>
+        </div>
+        <div>
+          <button id="refreshBtn" class="ghost">Refresh</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="panel">
+        <h2>Rows</h2>
+        <div class="msg warn" id="noteMsg">
+          Tip: make <strong>CASE No</strong> unique per row. Updates & deletes match by this field and will affect all matching rows.
+        </div>
+        <div id="loading" style="display:none;margin:10px 0;">
+          Loading<span class="spinner"></span>
+        </div>
+        <div style="overflow:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>NAME</th>
+                <th>CASE No</th>
+                <th>LOCATION</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="rowsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>This page talks directly to <code>https://sheetdb.io/api/v1/pxrtb3wqurmjf</code> from the browser. Keep this endpoint private if your sheet is sensitive.</p>
+  </footer>
+
+<script>
+(function(){
+  const API_BASE = 'https://sheetdb.io/api/v1/pxrtb3wqurmjf';
+  const COLS = { NAME: 'NAME', CASE: 'CASE No', LOCATION: 'LOCATION' };
+
+  // Elements
+  const rowsBody = document.getElementById('rowsBody');
+  const loading = document.getElementById('loading');
+  const form = document.getElementById('entryForm');
+  const saveBtn = document.getElementById('saveBtn');
+  const updateBtn = document.getElementById('updateBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const formMsg = document.getElementById('formMsg');
+  const nameEl = document.getElementById('name');
+  const caseEl = document.getElementById('caseNo');
+  const locationEl = document.getElementById('location');
+  const originalCaseNoEl = document.getElementById('originalCaseNo');
+  const searchInput = document.getElementById('searchInput');
+  const searchBtn = document.getElementById('searchBtn');
+  const clearSearchBtn = document.getElementById('clearSearchBtn');
+  const refreshBtn = document.getElementById('refreshBtn');
+
+  function setLoading(v){ loading.style.display = v ? 'block' : 'none'; }
+  function msg(el, text, type='ok'){ el.textContent = text; el.className = 'msg show ' + (type==='ok'?'ok': type==='err'?'err':'warn'); setTimeout(()=>{ el.className = 'msg'; }, 3500); }
+
+  async function sheetdb(method, url, data){
+    const opts = { method, headers: {} };
+    if (data !== undefined){ opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(data); }
+    const res = await fetch(url, opts);
+    if (!res.ok){
+      const t = await res.text().catch(()=> '');
+      throw new Error('HTTP '+res.status+' '+res.statusText+' '+t);
+    }
+    const ct = res.headers.get('content-type')||'';
+    return ct.includes('application/json') ? res.json() : res.text();
+  }
+
+  function renderRows(rows){
+    rowsBody.innerHTML = '';
+    if (!Array.isArray(rows) || rows.length === 0){
+      const tr = document.createElement('tr');
+      const td = document.createElement('td'); td.colSpan = 4; td.style.color = '#94a3b8'; td.textContent = 'No rows';
+      tr.appendChild(td); rowsBody.appendChild(tr); return;
+    }
+
+    for (const r of rows){
+      const tr = document.createElement('tr');
+      const tdName = document.createElement('td'); tdName.textContent = r[COLS.NAME] || ''; tr.appendChild(tdName);
+      const tdCase = document.createElement('td'); tdCase.textContent = r[COLS.CASE] || ''; tr.appendChild(tdCase);
+      const tdLoc  = document.createElement('td'); tdLoc.textContent = r[COLS.LOCATION] || ''; tr.appendChild(tdLoc);
+      const tdAct = document.createElement('td'); tdAct.className = 'actions';
+
+      const editBtn = document.createElement('button'); editBtn.textContent = 'Edit'; editBtn.className = 'muted';
+      editBtn.addEventListener('click', ()=> startEdit(r));
+
+      const delBtn = document.createElement('button'); delBtn.textContent = 'Delete'; delBtn.className = 'danger';
+      delBtn.addEventListener('click', ()=> deleteRow(r[COLS.CASE]||''));
+
+      tdAct.append(editBtn, delBtn); tr.appendChild(tdAct);
+      rowsBody.appendChild(tr);
+    }
+  }
+
+  async function loadAll(){
+    setLoading(true);
+    try{
+      const data = await sheetdb('GET', API_BASE);
+      renderRows(data);
+    }catch(e){ console.error(e); msg(formMsg, 'Load failed: '+e.message, 'err'); }
+    finally{ setLoading(false); }
+  }
+
+  async function search(q){
+    setLoading(true);
+    try{
+      const url = new URL(API_BASE + '/search');
+      url.searchParams.set(COLS.NAME, q);
+      url.searchParams.set(COLS.CASE, q);
+      // Match on either NAME or CASE No (OR). SheetDB supports array params via "or" param
+      // Using multiple keys performs AND by default, so we'll fetch separately and merge unique.
+      const [byName, byCase] = await Promise.all([
+        sheetdb('GET', url.origin + url.pathname + '?' + COLS.NAME + '=' + encodeURIComponent(q)),
+        sheetdb('GET', url.origin + url.pathname + '?' + encodeURIComponent(COLS.CASE) + '=' + encodeURIComponent(q)),
+      ]);
+      // merge unique by CASE No
+      const map = new Map();
+      for (const r of [...byName, ...byCase]){ map.set(r[COLS.CASE] + '|' + r[COLS.NAME], r); }
+      renderRows([...map.values()]);
+    }catch(e){ console.error(e); msg(formMsg, 'Search failed: '+e.message, 'err'); }
+    finally{ setLoading(false); }
+  }
+
+  function startEdit(row){
+    nameEl.value = row[COLS.NAME] || '';
+    caseEl.value = row[COLS.CASE] || '';
+    locationEl.value = row[COLS.LOCATION] || '';
+    originalCaseNoEl.value = row[COLS.CASE] || '';
+    updateBtn.disabled = false;
+    saveBtn.disabled = true;
+    msg(formMsg, 'Editing row with CASE No = '+ (row[COLS.CASE]||''), 'warn');
+  }
+
+  function resetForm(){
+    form.reset();
+    originalCaseNoEl.value='';
+    updateBtn.disabled = true; saveBtn.disabled = false;
+  }
+
+  async function addRow(e){
+    e.preventDefault();
+    const NAME = nameEl.value.trim();
+    const CASE = caseEl.value.trim();
+    const LOCATION = locationEl.value.trim();
+    if (!NAME || !CASE || !LOCATION){ return msg(formMsg, 'All fields are required.', 'warn'); }
+
+    try{
+      saveBtn.disabled = true; saveBtn.textContent = 'Adding…';
+      const payload = { data: [{ [COLS.NAME]: NAME, [COLS.CASE]: CASE, [COLS.LOCATION]: LOCATION }] };
+      const res = await sheetdb('POST', API_BASE, payload);
+      msg(formMsg, 'Created rows: '+ (res.created ?? JSON.stringify(res)), 'ok');
+      resetForm();
+      await loadAll();
+    }catch(e){ console.error(e); msg(formMsg, 'Add failed: '+e.message, 'err'); }
+    finally{ saveBtn.textContent = 'Add Row'; saveBtn.disabled = false; }
+  }
+
+  async function updateRow(){
+    const NAME = nameEl.value.trim();
+    const CASE = caseEl.value.trim();
+    const LOCATION = locationEl.value.trim();
+    const original = originalCaseNoEl.value.trim();
+    if (!original){ return msg(formMsg, 'No row selected for update.', 'warn'); }
+    if (!NAME || !CASE || !LOCATION){ return msg(formMsg, 'All fields are required.', 'warn'); }
+
+    try{
+      updateBtn.disabled = true; updateBtn.textContent = 'Updating…';
+      const colPath = encodeURIComponent(COLS.CASE);
+      const res = await sheetdb('PATCH', `${API_BASE}/${colPath}/${encodeURIComponent(original)}`, { data: { [COLS.NAME]: NAME, [COLS.CASE]: CASE, [COLS.LOCATION]: LOCATION } });
+      msg(formMsg, 'Updated rows: '+ (res.updated ?? JSON.stringify(res)), 'ok');
+      resetForm();
+      await loadAll();
+    }catch(e){ console.error(e); msg(formMsg, 'Update failed: '+e.message, 'err'); }
+    finally{ updateBtn.textContent = 'Update Row'; updateBtn.disabled = true; saveBtn.disabled = false; }
+  }
+
+  async function deleteRow(caseNo){
+    if (!caseNo) return msg(formMsg, 'Missing CASE No for delete.', 'warn');
+    if (!confirm(`Delete rows where ${COLS.CASE} = "${caseNo}"? This cannot be undone.`)) return;
+    try{
+      setLoading(true);
+      const colPath = encodeURIComponent(COLS.CASE);
+      const res = await sheetdb('DELETE', `${API_BASE}/${colPath}/${encodeURIComponent(caseNo)}`);
+      msg(formMsg, 'Deleted rows: '+ (res.deleted ?? JSON.stringify(res)), 'ok');
+      await loadAll();
+    }catch(e){ console.error(e); msg(formMsg, 'Delete failed: '+e.message, 'err'); }
+    finally{ setLoading(false); }
+  }
+
+  // Event listeners
+  form.addEventListener('submit', addRow);
+  updateBtn.addEventListener('click', updateRow);
+  resetBtn.addEventListener('click', resetForm);
+  refreshBtn.addEventListener('click', loadAll);
+  searchBtn.addEventListener('click', (e)=>{ e.preventDefault(); const q = searchInput.value.trim(); if (q) search(q); });
+  clearSearchBtn.addEventListener('click', ()=>{ searchInput.value=''; loadAll(); });
+
+  // Initial fetch
+  loadAll();
+})();
+</script>
+</body>
+</html>
