@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Advocate Umakant Sahoo – NAME / CASE No / LOCATION</title>
+  <title>SheetDB CRUD – NAME / CASE No / LOCATION</title>
   <style>
     :root { --bg:#0f172a; --panel:#111827; --muted:#94a3b8; --text:#e5e7eb; --accent:#22c55e; --danger:#ef4444; --warn:#f59e0b; }
     *{box-sizing:border-box}
@@ -59,7 +59,7 @@
 </head>
 <body>
   <header>
-    <h1>Advocate Umakant Sahoo</h1>
+    <h1>SheetDB CRUD</h1>
     <div class="sub">Works with columns: <code>NAME</code>, <code>CASE No</code>, <code>LOCATION</code>. Uses <strong>CASE No</strong> as the unique key for edits/deletes.</div>
   </header>
 
@@ -129,7 +129,174 @@
   </footer>
 
 <script>
-// ... JS unchanged ...
+(function(){
+  const API_BASE = 'https://sheetdb.io/api/v1/pxrtb3wqurmjf';
+  const COLS = { NAME: 'NAME', CASE: 'CASE No', LOCATION: 'LOCATION' };
+
+  // Elements
+  const rowsBody = document.getElementById('rowsBody');
+  const loading = document.getElementById('loading');
+  const form = document.getElementById('entryForm');
+  const saveBtn = document.getElementById('saveBtn');
+  const updateBtn = document.getElementById('updateBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const formMsg = document.getElementById('formMsg');
+  const nameEl = document.getElementById('name');
+  const caseEl = document.getElementById('caseNo');
+  const locationEl = document.getElementById('location');
+  const originalCaseNoEl = document.getElementById('originalCaseNo');
+  const searchInput = document.getElementById('searchInput');
+  const searchBtn = document.getElementById('searchBtn');
+  const clearSearchBtn = document.getElementById('clearSearchBtn');
+  const refreshBtn = document.getElementById('refreshBtn');
+
+  function setLoading(v){ loading.style.display = v ? 'block' : 'none'; }
+  function msg(el, text, type='ok'){ el.textContent = text; el.className = 'msg show ' + (type==='ok'?'ok': type==='err'?'err':'warn'); setTimeout(()=>{ el.className = 'msg'; }, 3500); }
+
+  async function sheetdb(method, url, data){
+    const opts = { method, headers: {} };
+    if (data !== undefined){ opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(data); }
+    const res = await fetch(url, opts);
+    if (!res.ok){
+      const t = await res.text().catch(()=> '');
+      throw new Error('HTTP '+res.status+' '+res.statusText+' '+t);
+    }
+    const ct = res.headers.get('content-type')||'';
+    return ct.includes('application/json') ? res.json() : res.text();
+  }
+
+  function renderRows(rows){
+    rowsBody.innerHTML = '';
+    if (!Array.isArray(rows) || rows.length === 0){
+      const tr = document.createElement('tr');
+      const td = document.createElement('td'); td.colSpan = 4; td.style.color = '#94a3b8'; td.textContent = 'No rows';
+      tr.appendChild(td); rowsBody.appendChild(tr); return;
+    }
+
+    for (const r of rows){
+      const tr = document.createElement('tr');
+      const tdName = document.createElement('td'); tdName.textContent = r[COLS.NAME] || ''; tr.appendChild(tdName);
+      const tdCase = document.createElement('td'); tdCase.textContent = r[COLS.CASE] || ''; tr.appendChild(tdCase);
+      const tdLoc  = document.createElement('td'); tdLoc.textContent = r[COLS.LOCATION] || ''; tr.appendChild(tdLoc);
+      const tdAct = document.createElement('td'); tdAct.className = 'actions';
+
+      const editBtn = document.createElement('button'); editBtn.textContent = 'Edit'; editBtn.className = 'muted';
+      editBtn.addEventListener('click', ()=> startEdit(r));
+
+      const delBtn = document.createElement('button'); delBtn.textContent = 'Delete'; delBtn.className = 'danger';
+      delBtn.addEventListener('click', ()=> deleteRow(r[COLS.CASE]||''));
+
+      tdAct.append(editBtn, delBtn); tr.appendChild(tdAct);
+      rowsBody.appendChild(tr);
+    }
+  }
+
+  async function loadAll(){
+    setLoading(true);
+    try{
+      const data = await sheetdb('GET', API_BASE);
+      renderRows(data);
+    }catch(e){ console.error(e); msg(formMsg, 'Load failed: '+e.message, 'err'); }
+    finally{ setLoading(false); }
+  }
+
+  async function search(q){
+    setLoading(true);
+    try{
+      const url = new URL(API_BASE + '/search');
+      url.searchParams.set(COLS.NAME, q);
+      url.searchParams.set(COLS.CASE, q);
+      // Match on either NAME or CASE No (OR). SheetDB supports array params via "or" param
+      // Using multiple keys performs AND by default, so we'll fetch separately and merge unique.
+      const [byName, byCase] = await Promise.all([
+        sheetdb('GET', url.origin + url.pathname + '?' + COLS.NAME + '=' + encodeURIComponent(q)),
+        sheetdb('GET', url.origin + url.pathname + '?' + encodeURIComponent(COLS.CASE) + '=' + encodeURIComponent(q)),
+      ]);
+      // merge unique by CASE No
+      const map = new Map();
+      for (const r of [...byName, ...byCase]){ map.set(r[COLS.CASE] + '|' + r[COLS.NAME], r); }
+      renderRows([...map.values()]);
+    }catch(e){ console.error(e); msg(formMsg, 'Search failed: '+e.message, 'err'); }
+    finally{ setLoading(false); }
+  }
+
+  function startEdit(row){
+    nameEl.value = row[COLS.NAME] || '';
+    caseEl.value = row[COLS.CASE] || '';
+    locationEl.value = row[COLS.LOCATION] || '';
+    originalCaseNoEl.value = row[COLS.CASE] || '';
+    updateBtn.disabled = false;
+    saveBtn.disabled = true;
+    msg(formMsg, 'Editing row with CASE No = '+ (row[COLS.CASE]||''), 'warn');
+  }
+
+  function resetForm(){
+    form.reset();
+    originalCaseNoEl.value='';
+    updateBtn.disabled = true; saveBtn.disabled = false;
+  }
+
+  async function addRow(e){
+    e.preventDefault();
+    const NAME = nameEl.value.trim();
+    const CASE = caseEl.value.trim();
+    const LOCATION = locationEl.value.trim();
+    if (!NAME || !CASE || !LOCATION){ return msg(formMsg, 'All fields are required.', 'warn'); }
+
+    try{
+      saveBtn.disabled = true; saveBtn.textContent = 'Adding…';
+      const payload = { data: [{ [COLS.NAME]: NAME, [COLS.CASE]: CASE, [COLS.LOCATION]: LOCATION }] };
+      const res = await sheetdb('POST', API_BASE, payload);
+      msg(formMsg, 'Created rows: '+ (res.created ?? JSON.stringify(res)), 'ok');
+      resetForm();
+      await loadAll();
+    }catch(e){ console.error(e); msg(formMsg, 'Add failed: '+e.message, 'err'); }
+    finally{ saveBtn.textContent = 'Add Row'; saveBtn.disabled = false; }
+  }
+
+  async function updateRow(){
+    const NAME = nameEl.value.trim();
+    const CASE = caseEl.value.trim();
+    const LOCATION = locationEl.value.trim();
+    const original = originalCaseNoEl.value.trim();
+    if (!original){ return msg(formMsg, 'No row selected for update.', 'warn'); }
+    if (!NAME || !CASE || !LOCATION){ return msg(formMsg, 'All fields are required.', 'warn'); }
+
+    try{
+      updateBtn.disabled = true; updateBtn.textContent = 'Updating…';
+      const colPath = encodeURIComponent(COLS.CASE);
+      const res = await sheetdb('PATCH', `${API_BASE}/${colPath}/${encodeURIComponent(original)}`, { data: { [COLS.NAME]: NAME, [COLS.CASE]: CASE, [COLS.LOCATION]: LOCATION } });
+      msg(formMsg, 'Updated rows: '+ (res.updated ?? JSON.stringify(res)), 'ok');
+      resetForm();
+      await loadAll();
+    }catch(e){ console.error(e); msg(formMsg, 'Update failed: '+e.message, 'err'); }
+    finally{ updateBtn.textContent = 'Update Row'; updateBtn.disabled = true; saveBtn.disabled = false; }
+  }
+
+  async function deleteRow(caseNo){
+    if (!caseNo) return msg(formMsg, 'Missing CASE No for delete.', 'warn');
+    if (!confirm(`Delete rows where ${COLS.CASE} = "${caseNo}"? This cannot be undone.`)) return;
+    try{
+      setLoading(true);
+      const colPath = encodeURIComponent(COLS.CASE);
+      const res = await sheetdb('DELETE', `${API_BASE}/${colPath}/${encodeURIComponent(caseNo)}`);
+      msg(formMsg, 'Deleted rows: '+ (res.deleted ?? JSON.stringify(res)), 'ok');
+      await loadAll();
+    }catch(e){ console.error(e); msg(formMsg, 'Delete failed: '+e.message, 'err'); }
+    finally{ setLoading(false); }
+  }
+
+  // Event listeners
+  form.addEventListener('submit', addRow);
+  updateBtn.addEventListener('click', updateRow);
+  resetBtn.addEventListener('click', resetForm);
+  refreshBtn.addEventListener('click', loadAll);
+  searchBtn.addEventListener('click', (e)=>{ e.preventDefault(); const q = searchInput.value.trim(); if (q) search(q); });
+  clearSearchBtn.addEventListener('click', ()=>{ searchInput.value=''; loadAll(); });
+
+  // Initial fetch
+  loadAll();
+})();
 </script>
 </body>
 </html>
